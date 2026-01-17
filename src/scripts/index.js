@@ -6,11 +6,10 @@
   Из index.js не допускается что то экспортировать
 */
 
-import { initialCards } from "./cards.js";
-import { createCardElement, deleteCard, likeCard } from "./components/card.js";
+import { createCardElement } from "./components/card.js";
 import { openModalWindow, closeModalWindow, setCloseModalWindowEventListeners } from "./components/modal.js";
 import { enableValidation, clearValidation } from "./components/validation.js";
-
+import { getCardList, getUserInfo, setUserInfo, updateUserAvatar, addNewCard, deleteCard, changeLikeCardStatus } from "./components/api.js";
 
 // DOM узлы
 const placesWrap = document.querySelector(".places__list");
@@ -39,6 +38,12 @@ const avatarFormModalWindow = document.querySelector(".popup_type_edit-avatar");
 const avatarForm = avatarFormModalWindow.querySelector(".popup__form");
 const avatarInput = avatarForm.querySelector(".popup__input");
 
+const deleteCardModalWindow = document.querySelector(".popup_type_remove-card");
+const deleteCardForm = deleteCardModalWindow.querySelector(".popup__form");
+
+let currentId;
+
+
 const handlePreviewPicture = ({ name, link }) => {
   imageElement.src = link;
   imageElement.alt = name;
@@ -48,34 +53,116 @@ const handlePreviewPicture = ({ name, link }) => {
 
 const handleProfileFormSubmit = (evt) => {
   evt.preventDefault();
-  profileTitle.textContent = profileTitleInput.value;
-  profileDescription.textContent = profileDescriptionInput.value;
-  closeModalWindow(profileFormModalWindow);
+  renderLoading(true, profileForm.querySelector(".popup__button"));
+
+  setUserInfo({
+    name: profileTitleInput.value,
+    about: profileDescriptionInput.value,
+  })
+    .then((userData) => {
+      // Код отвечающий за обновление данных на странице
+      profileTitle.textContent = userData.name;
+      profileDescription.textContent = userData.about;
+      closeModalWindow(profileFormModalWindow);
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      renderLoading(false, profileForm.querySelector(".popup__button"));
+    });
 };
 
 const handleAvatarFromSubmit = (evt) => {
   evt.preventDefault();
-  profileAvatar.style.backgroundImage = `url(${avatarInput.value})`;
-  closeModalWindow(avatarFormModalWindow);
+  renderLoading(true, avatarForm.querySelector(".popup__button"));
+
+  updateUserAvatar({
+    avatar: avatarInput.value,
+  })
+    .then((userData) => {
+      // Код отвечающий за обновление аватара на странице
+      profileAvatar.style.backgroundImage = `url(${userData.avatar})`;
+      closeModalWindow(avatarFormModalWindow);
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      renderLoading(false, avatarForm.querySelector(".popup__button"));
+    });
+  
 };
 
 const handleCardFormSubmit = (evt) => {
   evt.preventDefault();
-  placesWrap.prepend(
-    createCardElement(
-      {
-        name: cardNameInput.value,
-        link: cardLinkInput.value,
-      },
-      {
-        onPreviewPicture: handlePreviewPicture,
-        onLikeIcon: likeCard,
-        onDeleteCard: deleteCard,
-      }
-    )
-  );
+  renderLoading(true, cardForm.querySelector(".popup__button"), 'Создать', 'Создание...');
+  addNewCard({
+    name: cardNameInput.value,
+    link: cardLinkInput.value,
+  })
+    .then((cardData) => {
+      // Код отвечающий за добавление новой карточки на страницу
+      placesWrap.prepend(
+        createCardElement(cardData, {
+          onPreviewPicture: handlePreviewPicture,
+          onLikeIcon: hendelLikeCard,
+          onDeleteCard: hendelDeleteCard,
+        }, currentId)
+      );
+      closeModalWindow(cardFormModalWindow);
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      renderLoading(false, cardForm.querySelector(".popup__button"), 'Создать', 'Создание...');
+    });
+};
 
-  closeModalWindow(cardFormModalWindow);
+const hendelDeleteCard = (cardId, cardElement) => {
+  openModalWindow(deleteCardModalWindow);
+  const handleDeleteCardFormSubmit = (evt) => {
+    evt.preventDefault();
+    renderLoading(true, deleteCardForm.querySelector(".popup__button"), 'Да', 'Удаление...');
+    deleteCard(cardId)
+      .then(() => {
+        // Код отвечающий за удаление карточки со страницы
+        cardElement.remove();
+        closeModalWindow(deleteCardModalWindow);
+        deleteCardForm.removeEventListener("submit", handleDeleteCardFormSubmit);
+      })
+      .catch((err) => {
+        console.log(err);
+      })
+      .finally(() => {
+        renderLoading(false, deleteCardForm.querySelector(".popup__button"), 'Да', 'Удаление...');
+      });
+  };
+  deleteCardForm.addEventListener("submit", handleDeleteCardFormSubmit);
+};
+
+const hendelLikeCard = (cardId, cardElement) => {
+  const likeButton = cardElement.querySelector(".card__like-button");
+  const likeCountElement = cardElement.querySelector(".card__like-count");
+  const isLiked = likeButton.classList.contains("card__like-button_is-active");
+  changeLikeCardStatus(cardId, isLiked)
+    .then((updatedCard) => {
+      // Код отвечающий за обновление состояния лайка на странице
+      likeButton.classList.toggle("card__like-button_is-active");
+      likeCountElement.textContent = updatedCard.likes.length;
+    })
+    .catch((err) => {
+      console.log(err);
+    });
+};
+
+const renderLoading = (isLoading, button, defaultButtonText = 'Сохранить', loadingText = 'Сохранение...') => {
+  if (isLoading) {
+    button.textContent = loadingText;
+  } else {
+    button.textContent = defaultButtonText;
+  }
 };
 
 // EventListeners
@@ -99,17 +186,6 @@ openCardFormButton.addEventListener("click", () => {
   openModalWindow(cardFormModalWindow);
 });
 
-// отображение карточек
-initialCards.forEach((data) => {
-  placesWrap.append(
-    createCardElement(data, {
-      onPreviewPicture: handlePreviewPicture,
-      onLikeIcon: likeCard,
-      onDeleteCard: deleteCard,
-    })
-  );
-});
-
 //настраиваем обработчики закрытия попапов
 const allPopups = document.querySelectorAll(".popup");
 allPopups.forEach((popup) => {
@@ -129,3 +205,27 @@ const validationSettings = {
 // включение валидации вызовом enableValidation
 // все настройки передаются при вызове
 enableValidation(validationSettings);
+
+
+Promise.all([getCardList(), getUserInfo()])
+  .then(([cards, userData]) => {
+      // Код отвечающий за отрисовку полученных данных
+    currentId = userData._id;
+    profileTitle.textContent = userData.name;
+    profileDescription.textContent = userData.about;
+    profileAvatar.style.backgroundImage = `url(${userData.avatar})`;
+    cards.forEach((data) => {
+      placesWrap.append(
+        createCardElement(data, {
+          onPreviewPicture: handlePreviewPicture,
+          onLikeIcon: hendelLikeCard,
+          onDeleteCard: hendelDeleteCard,
+        }, currentId)
+      );
+    });
+  })
+  .catch((err) => {
+    console.log(err); // В случае возникновения ошибки выводим её в консоль
+  });
+
+  
